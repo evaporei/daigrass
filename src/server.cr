@@ -1,5 +1,4 @@
 require "http/server"
-
 STORAGE_FILE = ".data"
 
 # https://crystal-lang.org/api/1.11.2/File.html#constructor-detail
