@@ -1,8 +1,8 @@
 use std::fs::read_to_string;
 
-use db::index::IndexBuilder;
-use db::query::Query;
-use db::source::{FileScan, HashJoin, Metadata, Projector, Row, Schema, Selector};
+use daigrass::index::IndexBuilder;
+use daigrass::query::Query;
+use daigrass::source::{FileScan, HashJoin, Metadata, Projector, Row, Schema, Selector};
 
 // const QUERY: &str = "queries/simple.json";
 // const QUERY: &str = "queries/multi-table.json";

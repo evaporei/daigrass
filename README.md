@@ -1,4 +1,4 @@
-# db
+# 大グラス
 
 This is a database that I've built with the learnt knowledge mainly of PostgreSQL techniques.
 
