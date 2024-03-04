@@ -20,9 +20,9 @@ where
 }
 
 pub struct HeapFile {
-    ptr_lower: usize,
-    ptr_upper: usize,
-    free_space: usize,
+    ptr_lower: u16,
+    ptr_upper: u16,
+    free_space: u16,
     // TODO: convert those two into one structure
     writer: io::BufWriter<File>,
     reader: io::BufReader<File>,
@@ -40,17 +40,17 @@ impl HeapFile {
             // maybe change folder if cfg(test)?
             .open(format!("./data/{table}"))?;
 
-        // 8 (64 bits) * 2
-        let ptr_lower: usize = 16;
+        // 2 (16 bits) * 2
+        let ptr_lower: u16 = 4;
         // end of block
-        let ptr_upper: usize = 8192;
+        let ptr_upper: u16 = 8192;
         file.write_all(&ptr_lower.to_be_bytes())?;
         file.write_all(&ptr_upper.to_be_bytes())?;
 
         // fill whole block
-        file.write_all(&[0; 8192 - 16])?;
+        file.write_all(&[0; 8192 - 4])?;
 
-        let used = 8 + 8;
+        let used = 2 + 2;
 
         Ok(Self {
             ptr_lower,
@@ -67,18 +67,18 @@ impl HeapFile {
             .write(true)
             .open(format!("./data/{table}"))?;
 
-        let mut ptr_lower = [0; 8];
+        let mut ptr_lower = [0; 2];
         file.read_exact(&mut ptr_lower)?;
 
-        let mut ptr_upper = [0; 8];
+        let mut ptr_upper = [0; 2];
         file.read_exact(&mut ptr_upper)?;
 
-        let ptr_lower = usize::from_be_bytes(ptr_lower);
-        let ptr_upper = usize::from_be_bytes(ptr_upper);
+        let ptr_lower = u16::from_be_bytes(ptr_lower);
+        let ptr_upper = u16::from_be_bytes(ptr_upper);
 
-        let ptrs = (ptr_lower - 16) / 8;
+        let ptrs = (ptr_lower - 4) / 2;
         let tuples = 8192 - ptr_upper;
-        let used = 8 + 8 + ptrs + tuples;
+        let used = 2 + 2 + ptrs + tuples;
 
         Ok(Self {
             ptr_lower,
@@ -90,43 +90,42 @@ impl HeapFile {
     }
 
     pub fn insert(&mut self, row: Row) -> Result<(), io::Error> {
-        // TODO (important): check extra space size (if we're able to write)
-        // otherwise: new block (oh boy that will be a lot of work)
         let mut buffer = vec![];
         for column in row {
-            buffer.write_all(&column.len().to_be_bytes())?;
+            buffer.write_all(&(column.len() as u16).to_be_bytes())?;
             buffer.write_all(&column.as_bytes())?;
         }
-        let buffer_len = buffer.len(); // fixme
-        let new_upper = self.ptr_upper - buffer_len - 8;
 
-        if buffer_len + 8 > self.free_space {
+        // TODO: create blocks when page is full
+        let buffer_len = buffer.len() as u16; // fixme
+        if buffer_len + 2 > self.free_space {
             panic!("no more space in heap file");
         }
 
+        let new_upper = self.ptr_upper - buffer_len - 2;
         // maybe use SeekFrom::End and set ptr_upper to the result of .seek()
         // though in the future multiple pages might complicate things
         self.writer.seek(SeekFrom::Start((new_upper) as u64))?;
         self.writer.write_all(&buffer_len.to_be_bytes())?;
         self.writer.write_all(&buffer)?;
         self.update_ptrs(new_upper)?;
-        self.free_space -= 8 + buffer_len;
+        self.free_space -= 2 + buffer_len;
         // we'll see if we should keep this
         self.writer.flush()?;
         Ok(())
     }
 
     // header & line ptrs shenanigans
-    fn update_ptrs(&mut self, new_upper: usize) -> Result<(), io::Error> {
+    fn update_ptrs(&mut self, new_upper: u16) -> Result<(), io::Error> {
         // let's write the header
         self.writer.seek(SeekFrom::Start(0))?;
         // new line ptr
-        self.writer.write_all(&(self.ptr_lower + 8).to_be_bytes())?;
+        self.writer.write_all(&(self.ptr_lower + 2).to_be_bytes())?;
         self.writer.write_all(&new_upper.to_be_bytes())?;
         self.writer.seek(SeekFrom::Start(self.ptr_lower as u64))?;
         // update local
         self.ptr_upper = new_upper;
-        self.ptr_lower += 8;
+        self.ptr_lower += 2;
         // write new line ptr
         self.writer.write_all(&new_upper.to_be_bytes())?;
         Ok(())
@@ -135,32 +134,32 @@ impl HeapFile {
     // starts at 0
     // needs to be mut because of the underlying file buffers (maybe FIXME?)
     pub fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
-        let offset = 16 + 8 * n;
+        let offset = 4 + 2 * n;
         self.reader.seek(SeekFrom::Start(offset as u64))?;
-        let mut line_ptr = [0; 8];
+        let mut line_ptr = [0; 2];
         self.reader.read_exact(&mut line_ptr)?;
-        let line_ptr = usize::from_be_bytes(line_ptr);
+        let line_ptr = u16::from_be_bytes(line_ptr);
         // we wrote all zeroes previously
         if line_ptr == 0 {
             return Ok(None);
         }
         self.reader.seek(SeekFrom::Start(line_ptr as u64))?;
         // we can read up until this
-        let mut tuple_size = [0; 8];
+        let mut tuple_size = [0; 2];
         self.reader.read_exact(&mut tuple_size)?;
-        let tuple_size = usize::from_be_bytes(tuple_size);
-        let mut raw_row = vec![0; tuple_size];
+        let tuple_size = u16::from_be_bytes(tuple_size);
+        let mut raw_row = vec![0; tuple_size as usize];
         self.reader.read_exact(&mut raw_row)?;
         let mut row = vec![];
-        let mut curr = 0;
-        while curr < tuple_size {
-            let field_len = usize::from_be_bytes(raw_row[curr..curr + 8].try_into().unwrap());
+        let mut curr = 0usize;
+        while curr < tuple_size as usize {
+            let field_len = u16::from_be_bytes(raw_row[curr..curr + 2].try_into().unwrap());
             // TODO: maybe there's a way to leverage ptr & unsafe (from_raw_parts)
             // to avoid the .to_vec() allocation
             let field =
-                String::from_utf8(raw_row[curr + 8..curr + 8 + field_len].to_vec()).unwrap();
+                String::from_utf8(raw_row[curr + 2..curr + 2 + field_len as usize].to_vec()).unwrap();
             row.push(field);
-            curr += 8 + field_len;
+            curr += 2 + field_len as usize;
         }
         Ok(Some(row))
     }
@@ -195,66 +194,71 @@ impl Iterator for HeapIterator {
 fn test_heap_file() {
     let heap = HeapFile::create("test_movies").unwrap();
 
-    let expected: [u8; 16] = [
-        // 16
-        0, 0, 0, 0, 0, 0, 0, 16, // 8192
-        0, 0, 0, 0, 0, 0, 32, 0,
+    let expected: [u8; 4] = [
+        0, 4,
+        32, 0, // 8192
     ];
-    let mut header = [0; 16];
+    let mut header = [0; 4];
     let mut f = File::open("./data/test_movies").unwrap();
     f.read_exact(&mut header).unwrap();
     assert_eq!(header, expected);
-    assert_eq!(heap.free_space, 8176);
+    assert_eq!(heap.free_space, 8188);
 
     let mut heap = HeapFile::open("test_movies").unwrap();
 
-    assert_eq!(heap.ptr_lower, 16);
+    assert_eq!(heap.ptr_lower, 4);
     assert_eq!(heap.ptr_upper, 8192);
     // remains the same with ::open()
-    assert_eq!(heap.free_space, 8176);
+    assert_eq!(heap.free_space, 8188);
 
     let movie = vec![
-        // -------- length ------- 1
-        // 00 00 00 00 00 00 00 01 31
+        // - length -  1
+        // 00 00 00 01 31
         "1".into(),
-        // ------- length -------- T  o  y  \s S  t  o  r  y
-        // 00 00 00 00 00 00 00 09 54 6f 79 20 53 74 6f 72 79
+        // - length -  T  o  y  \s S  t  o  r  y
+        // 00 00 00 09 54 6f 79 20 53 74 6f 72 79
         "Toy Story".into(),
-        // ------- length -------- A  n  i  m  a  t  i  o  n
-        // 00 00 00 00 00 00 00 09 41 6e 69 6d 61 74 69 6f 6e
+        // - length -  A  n  i  m  a  t  i  o  n
+        // 00 00 00 09 41 6e 69 6d 61 74 69 6f 6e
         "Animation".into(),
     ];
     heap.insert(movie.clone()).unwrap();
 
     let expected = [
         // upper length
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2b, // length
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, // "1"
-        0x31, // length
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // "Toy Story"
-        0x54, 0x6f, 0x79, 0x20, 0x53, 0x74, 0x6f, 0x72, 0x79, // length
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, // "Animation"
+        0x00, 0x19,
+        // length
+        0x00, 0x01,
+        // "1"
+        0x31,
+        // length
+        0x00, 0x09,
+        // "Toy Story"
+        0x54, 0x6f, 0x79, 0x20, 0x53, 0x74, 0x6f, 0x72, 0x79,
+        // length
+        0x00, 0x09,
+        // "Animation"
         0x41, 0x6e, 0x69, 0x6d, 0x61, 0x74, 0x69, 0x6f, 0x6e,
     ];
 
-    let new_upper = 8192 - expected.len();
+    let new_upper = 8192 - expected.len() as u16;
     assert_eq!(heap.ptr_upper, new_upper);
-    assert_eq!(heap.ptr_lower, 24);
-    assert_eq!(heap.free_space, 8192 - 16 - expected.len());
+    assert_eq!(heap.ptr_lower, 6);
+    assert_eq!(heap.free_space, 8192 - 4 - expected.len() as u16);
 
     f.seek(SeekFrom::Start((8192 - expected.len()) as u64))
         .unwrap();
     // f.seek(SeekFrom::End(-(expected.len() as i64))).unwrap();
-    let mut found = [0; 51];
+    let mut found = [0; 27];
     f.read_exact(&mut found).unwrap();
     assert_eq!(found, expected);
 
-    let expected: [u8; 16] = [
-        // 16
-        0, 0, 0, 0, 0, 0, 0, 24, // 8192
-        0, 0, 0, 0, 0, 0, 0x1f, 0xcd,
+    let expected: [u8; 4] = [
+        0, 6,
+        // 8192
+        0x1f, 0xe5,
     ];
-    let mut header = [0; 16];
+    let mut header = [0; 4];
     f.seek(SeekFrom::Start(0)).unwrap();
     f.read_exact(&mut header).unwrap();
     assert_eq!(header, expected);
@@ -313,9 +317,9 @@ fn test_heap_full() {
         "Adventure|Animation|Children|Comedy|Fantasy".into(),
     ];
 
-    // after 89 of the movie above, we have no more extra space to
+    // after 121 of the movie above, we have no more extra space to
     // fit the same movie again
-    let movies = std::iter::repeat(movie).take(89);
+    let movies = std::iter::repeat(movie).take(121);
 
     let mut heap = HeapFile::create("test_full").unwrap();
 
