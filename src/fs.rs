@@ -189,6 +189,8 @@ impl Iterator for HeapIterator {
     }
 }
 
+// the tests below require a data/ folder
+
 #[test]
 fn test_heap_file() {
     let heap = HeapFile::create("test_movies").unwrap();
