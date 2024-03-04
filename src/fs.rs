@@ -157,7 +157,8 @@ impl HeapFile {
             // TODO: maybe there's a way to leverage ptr & unsafe (from_raw_parts)
             // to avoid the .to_vec() allocation
             let field =
-                String::from_utf8(raw_row[curr + 2..curr + 2 + field_len as usize].to_vec()).unwrap();
+                String::from_utf8(raw_row[curr + 2..curr + 2 + field_len as usize].to_vec())
+                    .unwrap();
             row.push(field);
             curr += 2 + field_len as usize;
         }
@@ -195,8 +196,7 @@ fn test_heap_file() {
     let heap = HeapFile::create("test_movies").unwrap();
 
     let expected: [u8; 4] = [
-        0, 4,
-        32, 0, // 8192
+        0, 4, 32, 0,
     ];
     let mut header = [0; 4];
     let mut f = File::open("./data/test_movies").unwrap();
@@ -225,20 +225,13 @@ fn test_heap_file() {
     heap.insert(movie.clone()).unwrap();
 
     let expected = [
-        // upper length
-        0x00, 0x19,
-        // length
-        0x00, 0x01,
-        // "1"
-        0x31,
-        // length
-        0x00, 0x09,
-        // "Toy Story"
-        0x54, 0x6f, 0x79, 0x20, 0x53, 0x74, 0x6f, 0x72, 0x79,
-        // length
-        0x00, 0x09,
-        // "Animation"
-        0x41, 0x6e, 0x69, 0x6d, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+        0x00, 0x19, // upper length
+        0x00, 0x01, // length
+        0x31, // "1"
+        0x00, 0x09, // length
+        0x54, 0x6f, 0x79, 0x20, 0x53, 0x74, 0x6f, 0x72, 0x79, // "Toy Story"
+        0x00, 0x09, // length
+        0x41, 0x6e, 0x69, 0x6d, 0x61, 0x74, 0x69, 0x6f, 0x6e, // "Animation"
     ];
 
     let new_upper = 8192 - expected.len() as u16;
@@ -255,7 +248,6 @@ fn test_heap_file() {
 
     let expected: [u8; 4] = [
         0, 6,
-        // 8192
         0x1f, 0xe5,
     ];
     let mut header = [0; 4];
