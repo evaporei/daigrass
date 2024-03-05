@@ -26,12 +26,14 @@ trait Heap {
     fn open(table: &str) -> Result<Self, io::Error>
     where
         Self: Sized;
-    fn insert(&mut self, row: Row) -> Result<(), io::Error>;
+    fn insert(&mut self, row: &Row) -> Result<(), io::Error>;
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error>;
 }
 
 pub struct HeapFile {
     heap: Vec<HeapBlock>,
+    n: usize,
+    table: String,
 }
 
 impl IntoIterator for HeapFile {
@@ -45,22 +47,22 @@ impl IntoIterator for HeapFile {
 
 impl HeapFile {
     pub fn ptr_lower(&self) -> u16 {
-        self.heap[0].ptr_lower
+        self.heap[self.n].ptr_lower
     }
     pub fn ptr_upper(&self) -> u16 {
-        self.heap[0].ptr_upper
+        self.heap[self.n].ptr_upper
     }
     pub fn free_space(&self) -> u16 {
-        self.heap[0].free_space
+        self.heap[self.n].free_space
     }
 }
 
 impl Heap for HeapFile {
-    fn insert(&mut self, row: Row) -> Result<(), io::Error> {
-        self.heap[0].insert(row)
+    fn insert(&mut self, row: &Row) -> Result<(), io::Error> {
+        self.heap[self.n].insert(row)
     }
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
-        self.heap[0].get(n)
+        self.heap[self.n].get(n)
     }
     fn open(table: &str) -> Result<Self, io::Error>
     where
@@ -68,6 +70,8 @@ impl Heap for HeapFile {
     {
         Ok(Self {
             heap: vec![Heap::open(table)?],
+            table: table.to_owned(),
+            n: 0,
         })
     }
     fn create(table: &str) -> Result<Self, io::Error>
@@ -76,6 +80,8 @@ impl Heap for HeapFile {
     {
         Ok(Self {
             heap: vec![Heap::create(table)?],
+            table: table.to_owned(),
+            n: 0,
         })
     }
 }
@@ -147,7 +153,7 @@ impl Heap for HeapBlock {
         })
     }
 
-    fn insert(&mut self, row: Row) -> Result<(), io::Error> {
+    fn insert(&mut self, row: &Row) -> Result<(), io::Error> {
         let mut buffer = vec![];
         for column in row {
             buffer.write_all(&(column.len() as u16).to_be_bytes())?;
@@ -290,7 +296,7 @@ fn test_heap_file() {
         // 00 00 00 09 41 6e 69 6d 61 74 69 6f 6e
         "Animation".into(),
     ];
-    heap.insert(movie.clone()).unwrap();
+    heap.insert(&movie).unwrap();
 
     let expected = [
         0x00, 0x19, // upper length
@@ -356,7 +362,7 @@ fn test_heap_file_iterator() {
     ];
 
     for movie in &movies {
-        heap.insert(movie.clone()).unwrap();
+        heap.insert(&movie).unwrap();
     }
 
     assert_eq!(
@@ -381,6 +387,6 @@ fn test_heap_full() {
     let mut heap = HeapFile::create("test_full").unwrap();
 
     for movie in movies {
-        heap.insert(movie).unwrap();
+        heap.insert(&movie).unwrap();
     }
 }
