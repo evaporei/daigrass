@@ -155,7 +155,7 @@ impl Heap for HeapBlock {
         }
 
         let buffer_len = buffer.len() as u16;
-        if self.can_insert(buffer_len) {
+        if !self.can_insert(buffer_len) {
             return Err(io::Error::new(
                 io::ErrorKind::OutOfMemory,
                 "no more space in heap file",
