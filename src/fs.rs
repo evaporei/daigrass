@@ -154,9 +154,8 @@ impl Heap for HeapBlock {
             buffer.write_all(&column.as_bytes())?;
         }
 
-        // TODO: create blocks when page is full
-        let buffer_len = buffer.len() as u16; // fixme
-        if buffer_len + 2 > self.free_space {
+        let buffer_len = buffer.len() as u16;
+        if self.can_insert(buffer_len) {
             return Err(io::Error::new(
                 io::ErrorKind::OutOfMemory,
                 "no more space in heap file",
@@ -226,6 +225,14 @@ impl HeapBlock {
         // write new line ptr
         self.writer.write_all(&new_upper.to_be_bytes())?;
         Ok(())
+    }
+
+    fn can_insert(&self, buffer_len: u16) -> bool {
+        if buffer_len + 2 > self.free_space {
+            false
+        } else {
+            true
+        }
     }
 }
 
