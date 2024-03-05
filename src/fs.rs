@@ -19,6 +19,13 @@ where
     buf_reader(filename).map(|b| b.lines())
 }
 
+trait Heap {
+    fn create(table: &str) -> Result<Self, io::Error> where Self: Sized;
+    fn open(table: &str) -> Result<Self, io::Error> where Self: Sized;
+    fn insert(&mut self, row: Row) -> Result<(), io::Error>;
+    fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error>;
+}
+
 pub struct HeapBlock {
     ptr_lower: u16,
     ptr_upper: u16,
@@ -28,11 +35,8 @@ pub struct HeapBlock {
     reader: io::BufReader<File>,
 }
 
-// the code here is messy
-// I'm still experimenting with the file API in a
-// procedural manner before I abstract things
-impl HeapBlock {
-    pub fn create(table: &str) -> Result<Self, io::Error> {
+impl Heap for HeapBlock {
+    fn create(table: &str) -> Result<Self, io::Error> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -61,7 +65,7 @@ impl HeapBlock {
         })
     }
 
-    pub fn open(table: &str) -> Result<Self, io::Error> {
+    fn open(table: &str) -> Result<Self, io::Error> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -89,7 +93,7 @@ impl HeapBlock {
         })
     }
 
-    pub fn insert(&mut self, row: Row) -> Result<(), io::Error> {
+    fn insert(&mut self, row: Row) -> Result<(), io::Error> {
         let mut buffer = vec![];
         for column in row {
             buffer.write_all(&(column.len() as u16).to_be_bytes())?;
@@ -115,25 +119,9 @@ impl HeapBlock {
         Ok(())
     }
 
-    // header & line ptrs shenanigans
-    fn update_ptrs(&mut self, new_upper: u16) -> Result<(), io::Error> {
-        // let's write the header
-        self.writer.seek(SeekFrom::Start(0))?;
-        // new line ptr
-        self.writer.write_all(&(self.ptr_lower + 2).to_be_bytes())?;
-        self.writer.write_all(&new_upper.to_be_bytes())?;
-        self.writer.seek(SeekFrom::Start(self.ptr_lower as u64))?;
-        // update local
-        self.ptr_upper = new_upper;
-        self.ptr_lower += 2;
-        // write new line ptr
-        self.writer.write_all(&new_upper.to_be_bytes())?;
-        Ok(())
-    }
-
     // starts at 0
     // needs to be mut because of the underlying file buffers (maybe FIXME?)
-    pub fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
+    fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
         let offset = 4 + 2 * n;
         self.reader.seek(SeekFrom::Start(offset as u64))?;
         let mut line_ptr = [0; 2];
@@ -165,6 +153,25 @@ impl HeapBlock {
         Ok(Some(row))
     }
 }
+
+impl HeapBlock {
+    // header & line ptrs shenanigans
+    fn update_ptrs(&mut self, new_upper: u16) -> Result<(), io::Error> {
+        // let's write the header
+        self.writer.seek(SeekFrom::Start(0))?;
+        // new line ptr
+        self.writer.write_all(&(self.ptr_lower + 2).to_be_bytes())?;
+        self.writer.write_all(&new_upper.to_be_bytes())?;
+        self.writer.seek(SeekFrom::Start(self.ptr_lower as u64))?;
+        // update local
+        self.ptr_upper = new_upper;
+        self.ptr_lower += 2;
+        // write new line ptr
+        self.writer.write_all(&new_upper.to_be_bytes())?;
+        Ok(())
+    }
+}
+
 
 pub struct HeapIterator {
     n: usize,
