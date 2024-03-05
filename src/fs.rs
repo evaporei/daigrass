@@ -23,7 +23,7 @@ trait Heap {
     fn create(table: &str) -> Result<Self, io::Error>
     where
         Self: Sized;
-    fn open(table: &str) -> Result<Self, io::Error>
+    fn open(table: &str, offset: u64) -> Result<Self, io::Error>
     where
         Self: Sized;
     fn insert(&mut self, row: &Row) -> Result<(), io::Error>;
@@ -64,12 +64,12 @@ impl Heap for HeapFile {
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
         self.heap[self.n].get(n)
     }
-    fn open(table: &str) -> Result<Self, io::Error>
+    fn open(table: &str, offset: u64) -> Result<Self, io::Error>
     where
         Self: Sized,
     {
         Ok(Self {
-            heap: vec![Heap::open(table)?],
+            heap: vec![Heap::open(table, offset)?],
             table: table.to_owned(),
             n: 0,
         })
@@ -90,6 +90,10 @@ struct HeapBlock {
     ptr_lower: u16,
     ptr_upper: u16,
     free_space: u16,
+    // this determines which block in the file we're looking at
+    // each block has 8192 bytes, so to access page 3, you just
+    // need to multiply those
+    offset: u64,
     // TODO: convert those two into one structure
     writer: io::BufWriter<File>,
     reader: io::BufReader<File>,
@@ -120,16 +124,20 @@ impl Heap for HeapBlock {
             ptr_lower,
             ptr_upper,
             free_space: ptr_upper - used,
+            // first block on ::create
+            offset: 0,
             writer: io::BufWriter::new(file.try_clone()?),
             reader: io::BufReader::new(file),
         })
     }
 
-    fn open(table: &str) -> Result<Self, io::Error> {
+    fn open(table: &str, offset: u64) -> Result<Self, io::Error> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(format!("./data/{table}"))?;
+
+        file.seek(SeekFrom::Start(offset))?;
 
         let mut ptr_lower = [0; 2];
         file.read_exact(&mut ptr_lower)?;
@@ -148,7 +156,8 @@ impl Heap for HeapBlock {
             ptr_lower,
             ptr_upper,
             free_space: 8192 - used,
-            writer: io::BufWriter::new(file.try_clone().unwrap()),
+            offset,
+            writer: io::BufWriter::new(file.try_clone()?),
             reader: io::BufReader::new(file),
         })
     }
@@ -171,7 +180,7 @@ impl Heap for HeapBlock {
         let new_upper = self.ptr_upper - buffer_len - 2;
         // maybe use SeekFrom::End and set ptr_upper to the result of .seek()
         // though in the future multiple pages might complicate things
-        self.writer.seek(SeekFrom::Start((new_upper) as u64))?;
+        self.writer.seek(SeekFrom::Start((new_upper) as u64 + self.offset))?;
         self.writer.write_all(&buffer_len.to_be_bytes())?;
         self.writer.write_all(&buffer)?;
         self.update_ptrs(new_upper)?;
@@ -185,7 +194,7 @@ impl Heap for HeapBlock {
     // needs to be mut because of the underlying file buffers (maybe FIXME?)
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
         let offset = 4 + 2 * n;
-        self.reader.seek(SeekFrom::Start(offset as u64))?;
+        self.reader.seek(SeekFrom::Start(offset as u64 + self.offset))?;
         let mut line_ptr = [0; 2];
         self.reader.read_exact(&mut line_ptr)?;
         let line_ptr = u16::from_be_bytes(line_ptr);
@@ -193,7 +202,7 @@ impl Heap for HeapBlock {
         if line_ptr == 0 {
             return Ok(None);
         }
-        self.reader.seek(SeekFrom::Start(line_ptr as u64))?;
+        self.reader.seek(SeekFrom::Start(line_ptr as u64 + self.offset))?;
         // we can read up until this
         let mut tuple_size = [0; 2];
         self.reader.read_exact(&mut tuple_size)?;
@@ -220,11 +229,11 @@ impl HeapBlock {
     // header & line ptrs shenanigans
     fn update_ptrs(&mut self, new_upper: u16) -> Result<(), io::Error> {
         // let's write the header
-        self.writer.seek(SeekFrom::Start(0))?;
+        self.writer.seek(SeekFrom::Start(0 + self.offset))?;
         // new line ptr
         self.writer.write_all(&(self.ptr_lower + 2).to_be_bytes())?;
         self.writer.write_all(&new_upper.to_be_bytes())?;
-        self.writer.seek(SeekFrom::Start(self.ptr_lower as u64))?;
+        self.writer.seek(SeekFrom::Start(self.ptr_lower as u64 + self.offset))?;
         // update local
         self.ptr_upper = new_upper;
         self.ptr_lower += 2;
@@ -278,7 +287,7 @@ fn test_heap_file() {
     assert_eq!(header, expected);
     assert_eq!(heap.free_space(), 8188);
 
-    let mut heap = HeapFile::open("test_movies").unwrap();
+    let mut heap = HeapFile::open("test_movies", 0).unwrap();
 
     assert_eq!(heap.ptr_lower(), 4);
     assert_eq!(heap.ptr_upper(), 8192);
