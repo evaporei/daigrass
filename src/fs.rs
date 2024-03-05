@@ -26,7 +26,51 @@ trait Heap {
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error>;
 }
 
-pub struct HeapBlock {
+pub struct HeapFile {
+    heap: HeapBlock,
+}
+
+impl IntoIterator for HeapFile {
+    type Item = Result<Row, io::Error>;
+    type IntoIter = HeapIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.heap.into_iter()
+    }
+}
+
+impl HeapFile {
+    pub fn ptr_lower(&self) -> u16 {
+        self.heap.ptr_lower
+    }
+    pub fn ptr_upper(&self) -> u16 {
+        self.heap.ptr_upper
+    }
+    pub fn free_space(&self) -> u16 {
+        self.heap.free_space
+    }
+}
+
+impl Heap for HeapFile {
+    fn insert(&mut self, row: Row) -> Result<(), io::Error> {
+        self.heap.insert(row)
+    }
+    fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
+        self.heap.get(n)
+    }
+    fn open(table: &str) -> Result<Self, io::Error> where Self: Sized {
+        Ok(Self {
+            heap: Heap::open(table)?,
+        })
+    }
+    fn create(table: &str) -> Result<Self, io::Error> where Self: Sized {
+        Ok(Self {
+            heap: Heap::create(table)?,
+        })
+    }
+}
+
+struct HeapBlock {
     ptr_lower: u16,
     ptr_upper: u16,
     free_space: u16,
@@ -200,7 +244,7 @@ impl Iterator for HeapIterator {
 
 #[test]
 fn test_heap_file() {
-    let heap = HeapBlock::create("test_movies").unwrap();
+    let heap = HeapFile::create("test_movies").unwrap();
 
     let expected: [u8; 4] = [
         0, 4, 32, 0,
@@ -209,14 +253,14 @@ fn test_heap_file() {
     let mut f = File::open("./data/test_movies").unwrap();
     f.read_exact(&mut header).unwrap();
     assert_eq!(header, expected);
-    assert_eq!(heap.free_space, 8188);
+    assert_eq!(heap.free_space(), 8188);
 
-    let mut heap = HeapBlock::open("test_movies").unwrap();
+    let mut heap = HeapFile::open("test_movies").unwrap();
 
-    assert_eq!(heap.ptr_lower, 4);
-    assert_eq!(heap.ptr_upper, 8192);
+    assert_eq!(heap.ptr_lower(), 4);
+    assert_eq!(heap.ptr_upper(), 8192);
     // remains the same with ::open()
-    assert_eq!(heap.free_space, 8188);
+    assert_eq!(heap.free_space(), 8188);
 
     let movie = vec![
         // - length -  1
@@ -242,9 +286,9 @@ fn test_heap_file() {
     ];
 
     let new_upper = 8192 - expected.len() as u16;
-    assert_eq!(heap.ptr_upper, new_upper);
-    assert_eq!(heap.ptr_lower, 6);
-    assert_eq!(heap.free_space, 8192 - 4 - expected.len() as u16);
+    assert_eq!(heap.ptr_upper(), new_upper);
+    assert_eq!(heap.ptr_lower(), 6);
+    assert_eq!(heap.free_space(), 8192 - 4 - expected.len() as u16);
 
     f.seek(SeekFrom::Start((8192 - expected.len()) as u64))
         .unwrap();
@@ -267,7 +311,7 @@ fn test_heap_file() {
 
 #[test]
 fn test_heap_file_iterator() {
-    let mut heap = HeapBlock::create("test_it").unwrap();
+    let mut heap = HeapFile::create("test_it").unwrap();
 
     let movies = vec![
         vec![
@@ -320,7 +364,7 @@ fn test_heap_full() {
     // fit the same movie again
     let movies = std::iter::repeat(movie).take(121);
 
-    let mut heap = HeapBlock::create("test_full").unwrap();
+    let mut heap = HeapFile::create("test_full").unwrap();
 
     for movie in movies {
         heap.insert(movie).unwrap();
