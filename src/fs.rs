@@ -147,7 +147,10 @@ impl Heap for HeapBlock {
         // TODO: create blocks when page is full
         let buffer_len = buffer.len() as u16; // fixme
         if buffer_len + 2 > self.free_space {
-            panic!("no more space in heap file");
+            return Err(io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "no more space in heap file",
+            ));
         }
 
         let new_upper = self.ptr_upper - buffer_len - 2;
