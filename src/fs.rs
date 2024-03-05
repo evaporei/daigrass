@@ -31,43 +31,43 @@ trait Heap {
 }
 
 pub struct HeapFile {
-    heap: HeapBlock,
+    heap: Vec<HeapBlock>,
 }
 
 impl IntoIterator for HeapFile {
     type Item = Result<Row, io::Error>;
     type IntoIter = HeapIterator;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.heap.into_iter()
+    fn into_iter(mut self) -> Self::IntoIter {
+        self.heap.remove(0).into_iter()
     }
 }
 
 impl HeapFile {
     pub fn ptr_lower(&self) -> u16 {
-        self.heap.ptr_lower
+        self.heap[0].ptr_lower
     }
     pub fn ptr_upper(&self) -> u16 {
-        self.heap.ptr_upper
+        self.heap[0].ptr_upper
     }
     pub fn free_space(&self) -> u16 {
-        self.heap.free_space
+        self.heap[0].free_space
     }
 }
 
 impl Heap for HeapFile {
     fn insert(&mut self, row: Row) -> Result<(), io::Error> {
-        self.heap.insert(row)
+        self.heap[0].insert(row)
     }
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
-        self.heap.get(n)
+        self.heap[0].get(n)
     }
     fn open(table: &str) -> Result<Self, io::Error>
     where
         Self: Sized,
     {
         Ok(Self {
-            heap: Heap::open(table)?,
+            heap: vec![Heap::open(table)?],
         })
     }
     fn create(table: &str) -> Result<Self, io::Error>
@@ -75,7 +75,7 @@ impl Heap for HeapFile {
         Self: Sized,
     {
         Ok(Self {
-            heap: Heap::create(table)?,
+            heap: vec![Heap::create(table)?],
         })
     }
 }
