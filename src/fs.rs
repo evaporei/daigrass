@@ -20,8 +20,12 @@ where
 }
 
 trait Heap {
-    fn create(table: &str) -> Result<Self, io::Error> where Self: Sized;
-    fn open(table: &str) -> Result<Self, io::Error> where Self: Sized;
+    fn create(table: &str) -> Result<Self, io::Error>
+    where
+        Self: Sized;
+    fn open(table: &str) -> Result<Self, io::Error>
+    where
+        Self: Sized;
     fn insert(&mut self, row: Row) -> Result<(), io::Error>;
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error>;
 }
@@ -58,12 +62,18 @@ impl Heap for HeapFile {
     fn get(&mut self, n: usize) -> Result<Option<Row>, io::Error> {
         self.heap.get(n)
     }
-    fn open(table: &str) -> Result<Self, io::Error> where Self: Sized {
+    fn open(table: &str) -> Result<Self, io::Error>
+    where
+        Self: Sized,
+    {
         Ok(Self {
             heap: Heap::open(table)?,
         })
     }
-    fn create(table: &str) -> Result<Self, io::Error> where Self: Sized {
+    fn create(table: &str) -> Result<Self, io::Error>
+    where
+        Self: Sized,
+    {
         Ok(Self {
             heap: Heap::create(table)?,
         })
@@ -219,7 +229,6 @@ impl HeapBlock {
     }
 }
 
-
 pub struct HeapIterator {
     n: usize,
     heap: HeapBlock,
@@ -249,9 +258,7 @@ impl Iterator for HeapIterator {
 fn test_heap_file() {
     let heap = HeapFile::create("test_movies").unwrap();
 
-    let expected: [u8; 4] = [
-        0, 4, 32, 0,
-    ];
+    let expected: [u8; 4] = [0, 4, 32, 0];
     let mut header = [0; 4];
     let mut f = File::open("./data/test_movies").unwrap();
     f.read_exact(&mut header).unwrap();
@@ -300,10 +307,7 @@ fn test_heap_file() {
     f.read_exact(&mut found).unwrap();
     assert_eq!(found, expected);
 
-    let expected: [u8; 4] = [
-        0, 6,
-        0x1f, 0xe5,
-    ];
+    let expected: [u8; 4] = [0, 6, 0x1f, 0xe5];
     let mut header = [0; 4];
     f.seek(SeekFrom::Start(0)).unwrap();
     f.read_exact(&mut header).unwrap();
