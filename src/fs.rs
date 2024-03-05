@@ -19,7 +19,7 @@ where
     buf_reader(filename).map(|b| b.lines())
 }
 
-pub struct HeapFile {
+pub struct HeapBlock {
     ptr_lower: u16,
     ptr_upper: u16,
     free_space: u16,
@@ -31,7 +31,7 @@ pub struct HeapFile {
 // the code here is messy
 // I'm still experimenting with the file API in a
 // procedural manner before I abstract things
-impl HeapFile {
+impl HeapBlock {
     pub fn create(table: &str) -> Result<Self, io::Error> {
         let mut file = OpenOptions::new()
             .read(true)
@@ -168,10 +168,10 @@ impl HeapFile {
 
 pub struct HeapIterator {
     n: usize,
-    heap: HeapFile,
+    heap: HeapBlock,
 }
 
-impl IntoIterator for HeapFile {
+impl IntoIterator for HeapBlock {
     type Item = Result<Row, io::Error>;
     type IntoIter = HeapIterator;
 
@@ -193,7 +193,7 @@ impl Iterator for HeapIterator {
 
 #[test]
 fn test_heap_file() {
-    let heap = HeapFile::create("test_movies").unwrap();
+    let heap = HeapBlock::create("test_movies").unwrap();
 
     let expected: [u8; 4] = [
         0, 4, 32, 0,
@@ -204,7 +204,7 @@ fn test_heap_file() {
     assert_eq!(header, expected);
     assert_eq!(heap.free_space, 8188);
 
-    let mut heap = HeapFile::open("test_movies").unwrap();
+    let mut heap = HeapBlock::open("test_movies").unwrap();
 
     assert_eq!(heap.ptr_lower, 4);
     assert_eq!(heap.ptr_upper, 8192);
@@ -260,7 +260,7 @@ fn test_heap_file() {
 
 #[test]
 fn test_heap_file_iterator() {
-    let mut heap = HeapFile::create("test_it").unwrap();
+    let mut heap = HeapBlock::create("test_it").unwrap();
 
     let movies = vec![
         vec![
@@ -313,7 +313,7 @@ fn test_heap_full() {
     // fit the same movie again
     let movies = std::iter::repeat(movie).take(121);
 
-    let mut heap = HeapFile::create("test_full").unwrap();
+    let mut heap = HeapBlock::create("test_full").unwrap();
 
     for movie in movies {
         heap.insert(movie).unwrap();
